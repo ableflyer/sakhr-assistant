@@ -22,7 +22,6 @@ git remote add upstream https://github.com/ableflyer/sakhr-assistant.git
 
 ### 2. Backend Setup
 ```bash
-cd backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -36,7 +35,6 @@ cp .env.example .env
 
 ### 3. Frontend Setup
 ```bash
-cd frontend
 flutter clean
 flutter pub get
 ```
