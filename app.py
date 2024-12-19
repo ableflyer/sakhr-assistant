@@ -237,75 +237,108 @@ def transcribe_audio():
 @error_handler
 def generate_quiz():
     if not request.is_json:
+        logger.error("Request content-type is not application/json")
         return jsonify({'error': 'Content-Type must be application/json'}), 400
     
     data = request.get_json()
     if 'notes' not in data:
+        logger.error("No notes provided in request")
         return jsonify({'error': 'No notes provided'}), 400
     
     notes = data['notes']
-    _, llm = init_models()
+    logger.info(f"Received notes of length: {len(notes)}")
     
-    logger.info("Generating quiz")
-    quiz_messages = [
-        (
-            "system",
-            '''
-            Instructions:
+    try:
+        # Log model initialization start
+        logger.info("Starting model initialization")
+        _, llm = init_models()
+        logger.info("Model initialization complete")
+        
+        logger.info("Starting quiz generation")
+        start_time = datetime.datetime.now()
+        
+        quiz_messages = [
+            (
+                "system",
+                '''
+                **DO NOT HALLUCINATE**
 
-            Create a mini-quiz with 10 questions based on the provided notes
-            Use the following strict format for EACH question:
-            [QUESTION_TYPE]|||[QUESTION_TEXT]|||[CORRECT_ANSWER]|||[INCORRECT_ANSWER1]|||[INCORRECT_ANSWER2]|||[INCORRECT_ANSWER3]|||[EXPLANATION]
+                Instructions:
 
-            Question Types:
+                Create EXACTLY 10 quiz questions based on the provided notes. You must generate all 10 questions, no more and no less.
+                
+                Use this strict format for EACH question:
+                [QUESTION_TYPE]|||[QUESTION_TEXT]|||[CORRECT_ANSWER]|||[INCORRECT_ANSWER1]|||[INCORRECT_ANSWER2]|||[INCORRECT_ANSWER3]|||[EXPLANATION]
 
-            MULTIPLE_CHOICE: Standard multiple-choice question
-            TRUE_FALSE: Yes/No or True/False question
-            MATCH: Matching pairs
-            FILL_BLANK: Complete the sentence question
+                Question Types (distribute these evenly):
+                - MULTIPLE_CHOICE: Standard multiple-choice question (4 questions)
+                - TRUE_FALSE: Yes/No or True/False question (2 questions)
+                - ORDER: Put the answers in the correct order (2 questions)
+                - FILL_BLANK: Complete the sentence question (2 questions)
 
-            Example Format:
-            MULTIPLE_CHOICE|||What is the capital of France?|||Paris|||London|||Berlin|||Rome|||Paris is the official capital and largest city of France, located in the north-central part of the country.
-            
-            Additional Guidelines:
+                Example Format:
+                MULTIPLE_CHOICE|||What is the capital of France?|||Paris|||London|||Berlin|||Rome|||Paris is the official capital and largest city of France.
+                
+                Guidelines:
+                1. MUST generate exactly 10 questions
+                2. Ensure answers are plausible but clearly distinguishable
+                3. Create distractors that are related but incorrect
+                4. Provide brief, informative explanations
+                5. Maintain an educational tone similar to Duolingo
+                6. Ignore any notes about reminders, assignments, tests, or additional resources
 
-            Ensure answers are plausible but clearly distinguishable
-            Create distractors that are related but incorrect
-            Provide a brief, informative explanation for each answer
-            Maintain an educational tone similar to Duolingo
-            Randomize answer order in the actual quiz presentation
-            ignore any notes about reminders like quizes, assignment, tests, or additional resources
-            '''
-        ),
-        (
-            "human",
-            f"Notes to Convert into Quiz: \n\n{notes}"
-        ),
-    ]
-    
-    quiz_response = llm.invoke(quiz_messages)
-    quiz_content = quiz_response.content
-    
-    # Parse quiz content
-    questions = []
-    for line in quiz_content.strip().split('\n'):
-        if '|||' in line:
-            parts = line.split('|||')
-            if len(parts) >= 7:  # Ensure we have all required parts
-                questions.append({
-                    'type': parts[0].strip(),
-                    'question': parts[1].strip(),
-                    'correct_answer': parts[2].strip(),
-                    'incorrect_answers': [ans.strip() for ans in parts[3:6]],
-                    'explanation': parts[6].strip()
-                })
-    
-    logger.info(f"Generated {len(questions)} questions")
-    return jsonify({
-        'status': 'success',
-        'questions': questions,
-        'timestamp': datetime.datetime.now().isoformat()
-    })
+                DO NOT STOP until you have generated all 10 questions.
+                '''
+            ),
+            (
+                "human",
+                f"Notes to Convert into Quiz: \n\n{notes}"
+            ),
+        ]
+        
+        logger.info("Invoking LLM")
+        quiz_response = llm.invoke(quiz_messages, timeout=30)
+        logger.info("LLM response received")
+        
+        quiz_content = quiz_response.content
+        logger.info(f"Quiz content length: {len(quiz_content)}")
+        
+        # Parse quiz content
+        questions = []
+        for line in quiz_content.strip().split('\n'):
+            if '|||' in line:
+                parts = line.split('|||')
+                if len(parts) >= 7:  # Ensure we have all required parts
+                    questions.append({
+                        'type': parts[0].strip(),
+                        'question': parts[1].strip(),
+                        'correct_answer': parts[2].strip(),
+                        'incorrect_answers': [ans.strip() for ans in parts[3:6]],
+                        'explanation': parts[6].strip()
+                    })
+        
+        end_time = datetime.datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        
+        logger.info(f"Generated {len(questions)} questions in {duration} seconds")
+        
+        return jsonify({
+            'status': 'success',
+            'questions': questions,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'llm_output': quiz_content,
+            'notes_length': len(notes),
+            'generation_time': duration,
+            'debug_info': {
+                'questions_found': len(questions),
+                'notes_preview': notes[:200],
+                'processing_time': duration
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in quiz generation: {str(e)}", exc_info=True)
+        raise e
 
 @app.route('/api/generate-reminders', methods=['POST'])
 @error_handler
@@ -339,6 +372,9 @@ def generate_reminders():
             2 weeks|||ASSIGNMENT|||Math Homework|||Complete exercises 1-10|||HIGH
             3 days|||EXAM|||Physics Quiz|||Study chapters 1-3|||HIGH
             1 month|||DEADLINE|||Project Proposal|||Write initial draft|||MEDIUM
+
+            Additional Guidelines:
+            Do not add any reminders if there are no reminders mentioned in the notes
             '''
         ),
         (
@@ -421,4 +457,4 @@ if __name__ == '__main__':
         logger.warning("ffmpeg not found or not working. Audio conversion may fail.")
         logger.warning(f"Error: {str(e)}")
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=80)
