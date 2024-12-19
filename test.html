@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+    <style>
+        body { padding: 20px; font-family: Arial, sans-serif; }
+        .test-section { margin-bottom: 20px; }
+        .result { margin-top: 10px; padding: 10px; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <div class="test-section">
+        <h3>1. Test File Upload</h3>
+        <form id="uploadForm">
+            <input type="file" id="fileInput">
+            <button type="submit">Upload</button>
+        </form>
+        <div id="uploadResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>2. Test Quiz Generation</h3>
+        <textarea id="quizNotes" rows="4" cols="50"></textarea>
+        <br>
+        <button onclick="testQuiz()">Generate Quiz</button>
+        <div id="quizResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>3. Test Reminders</h3>
+        <textarea id="reminderNotes" rows="4" cols="50"></textarea>
+        <br>
+        <button onclick="testReminders()">Generate Reminders</button>
+        <div id="reminderResult" class="result"></div>
+    </div>
+
+    <script>
+        // Test server connection
+        fetch('http://localhost:5000/api/generate-quiz', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({notes: 'test'})
+        })
+        .then(response => console.log('Server is accessible'))
+        .catch(error => console.error('Server error:', error));
+
+        // File upload
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const resultDiv = document.getElementById('uploadResult');
+            resultDiv.textContent = 'Uploading...';
+
+            const formData = new FormData();
+            const fileInput = document.getElementById('fileInput');
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('http://localhost:80/api/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+                console.error('Upload error:', error);
+            }
+        });
+
+        // Quiz generation
+        async function testQuiz() {
+            const resultDiv = document.getElementById('quizResult');
+            resultDiv.textContent = 'Generating quiz...';
+            
+            try {
+                const response = await fetch('http://localhost:80/api/generate-quiz', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        notes: document.getElementById('quizNotes').value
+                    })
+                });
+                const data = await response.json();
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+                console.error('Quiz error:', error);
+            }
+        }
+
+        // Reminders generation
+        async function testReminders() {
+            const resultDiv = document.getElementById('reminderResult');
+            resultDiv.textContent = 'Generating reminders...';
+            
+            try {
+                const response = await fetch('http://localhost:80/api/generate-reminders', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        notes: document.getElementById('reminderNotes').value
+                    })
+                });
+                const data = await response.json();
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+                console.error('Reminders error:', error);
+            }
+        }
+    </script>
+</body>
+</html>
